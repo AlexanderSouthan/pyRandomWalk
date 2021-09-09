@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import matplotlib as mpl
 import cycler
 from mpl_toolkits.mplot3d import Axes3D
@@ -12,8 +14,9 @@ class random_walk():
     def __init__(self, step_number=100, number_of_walks=1, start_x=0,
                  start_y=0, start_z=0, dimensions=2, step_length=1,
                  angles_xy=None, angles_xz=None, angles_xy_p=None,
-                 angles_xz_p=None, x_limits=None, y_limits=None,
-                 z_limits=None, constraint_counter=1000, wall_mode='exclude'):
+                 angles_xz_p=None, x_limits=[None, None],
+                 y_limits=[None, None], z_limits=[None, None],
+                 constraint_counter=1000, wall_mode='exclude'):
         """
         Initialize random walk instances.
 
@@ -157,6 +160,20 @@ class random_walk():
         self.y = np.zeros((self.step_number+1, self.number_of_walks))
         self.z = np.zeros((self.step_number+1, self.number_of_walks))
 
+        if self.wall_mode == 'reflect':
+            self.reflect_x = pd.DataFrame(
+                [[[] for _ in range(self.number_of_walks)] for _ in range(self.step_number+1)],
+                index=np.arange(self.step_number+1),
+                columns=np.arange(self.number_of_walks))
+            self.reflect_y = pd.DataFrame(
+                [[[] for _ in range(self.number_of_walks)] for _ in range(self.step_number+1)],
+                index=np.arange(self.step_number+1),
+                columns=np.arange(self.number_of_walks))
+            self.reflect_z = pd.DataFrame(
+                [[[] for _ in range(self.number_of_walks)] for _ in range(self.step_number+1)],
+                index=np.arange(self.step_number+1),
+                columns=np.arange(self.number_of_walks))
+
         self.x[0] = self.start_x
         self.y[0] = self.start_y
         self.z[0] = self.start_z
@@ -173,6 +190,7 @@ class random_walk():
 
             if self.wall_mode == 'exclude':
                 counter = np.zeros((self.number_of_walks))
+                constraint_violated = np.sum(constraint_violated, axis=0, dtype='bool')
                 while any(constraint_violated):
                     curr_x_step, curr_y_step, curr_z_step = self.calc_next_steps(
                         np.sum(constraint_violated))
@@ -184,9 +202,9 @@ class random_walk():
                     self.z[curr_step+1, constraint_violated] = (
                         self.z[curr_step, constraint_violated] + curr_z_step)
 
-                    constraint_violated = self.check_constraints(
+                    constraint_violated = np.sum(self.check_constraints(
                         self.x[curr_step+1], self.y[curr_step+1],
-                        self.z[curr_step+1])
+                        self.z[curr_step+1]), axis=0, dtype='bool')
 
                     counter[constraint_violated] += 1
                     assert not any(
@@ -196,7 +214,50 @@ class random_walk():
                             'in one of the edges of the allowed space.')
 
             elif self.wall_mode == 'reflect':
-                pass
+
+                reference = []
+                reference.append(np.tile(self.x[curr_step], 2).reshape(2, -1))
+                reference.append(np.tile(self.y[curr_step], 2).reshape(2, -1))
+                reference.append(np.tile(self.z[curr_step], 2).reshape(2, -1))
+
+                while any(constraint_violated[0:6].ravel()):
+                    for curr_dim, curr_limits, curr_coord in zip(
+                            range(3),
+                            [self.x_limits, self.y_limits, self.z_limits],
+                            [self.x, self.y, self.z]):
+                        if not all(lim is None for lim in curr_limits):
+                            for ii in range(2*curr_dim, 2*curr_dim+2):
+                                reflex_coords = self.calc_intersect_coords(
+                                    [reference[0][ii-2*curr_dim, constraint_violated[ii]],
+                                     reference[1][ii-2*curr_dim, constraint_violated[ii]],
+                                     reference[2][ii-2*curr_dim, constraint_violated[ii]]],
+                                    [self.x[curr_step+1, constraint_violated[ii]],
+                                     self.y[curr_step+1, constraint_violated[ii]],
+                                     self.z[curr_step+1, constraint_violated[ii]]],
+                                    curr_limits[ii-2*curr_dim], curr_dim)
+
+                                point_dims = [0, 1, 2]
+                                point_dims.remove(curr_dim)
+
+                                reference[curr_dim][1-ii+2*curr_dim, constraint_violated[ii]] = curr_limits[ii-2*curr_dim]
+                                reference[point_dims[0]][1-ii+2*curr_dim, constraint_violated[ii]] = reflex_coords[point_dims[0]]
+                                reference[point_dims[1]][1-ii+2*curr_dim, constraint_violated[ii]] = reflex_coords[point_dims[1]]
+
+                                for curr_list_x, curr_list_y, curr_list_z, curr_reflex_x, curr_reflex_y, curr_reflex_z in zip(
+                                        self.reflect_x.iloc[curr_step+1, constraint_violated[ii]],
+                                        self.reflect_y.iloc[curr_step+1, constraint_violated[ii]],
+                                        self.reflect_z.iloc[curr_step+1, constraint_violated[ii]],
+                                        reflex_coords[0], reflex_coords[1], reflex_coords[2]):
+                                    curr_list_x.append(curr_reflex_x)
+                                    curr_list_y.append(curr_reflex_y)
+                                    curr_list_z.append(curr_reflex_z)
+
+                            curr_coord[curr_step+1, constraint_violated[2*curr_dim]] -= 2*(curr_coord[curr_step+1, constraint_violated[2*curr_dim]]-curr_limits[0])
+                            curr_coord[curr_step+1, constraint_violated[2*curr_dim+1]] -= 2*(curr_coord[curr_step+1, constraint_violated[2*curr_dim+1]]-curr_limits[1])
+
+                    constraint_violated = self.check_constraints(
+                        self.x[curr_step+1], self.y[curr_step+1],
+                        self.z[curr_step+1])
 
             else:
                 raise ValueError(
@@ -245,23 +306,36 @@ class random_walk():
 
     def check_constraints(self, curr_x, curr_y, curr_z):
         assert len(curr_x) == len(curr_y) == len(curr_z), 'Arrays must have equal lengths.'
-        constraint_violated = np.full((len(curr_x)), False)
+        constraint_violated = np.full((6, len(curr_x)), False)
 
-        if self.x_limits is not None:
-            constraint_violated += (
-                (curr_x > self.x_limits[1]) | (curr_x < self.x_limits[0]))
-        if self.y_limits is not None:
-            constraint_violated += (
-                (curr_y > self.y_limits[1]) | (curr_y < self.y_limits[0]))
-        if self.z_limits is not None:
-            constraint_violated += (
-                (curr_z > self.z_limits[1]) | (curr_z < self.z_limits[0]))
+        for curr_idx, (curr_values, curr_limits) in enumerate(zip(
+                [curr_x, curr_y, curr_z],
+                [self.x_limits, self.y_limits, self.z_limits])):
+            if not all(lim is None for lim in curr_limits):
+                constraint_violated[curr_idx*2] = (curr_values < curr_limits[0])
+                constraint_violated[curr_idx*2+1] = (curr_values > curr_limits[1])
 
         return constraint_violated
 
+    def calc_intersect_coords(self, point_1, point_2, limit, limit_dim):
+        point_dims = [0, 1, 2]
+        point_dims.remove(limit_dim)
+
+        slopes_dim_1 = (point_2[point_dims[0]] - point_1[point_dims[0]])/(point_2[limit_dim] - point_1[limit_dim])
+        slopes_dim_2 = (point_2[point_dims[1]] - point_1[point_dims[1]])/(point_2[limit_dim] - point_1[limit_dim])
+
+        # coords_at_lim = [limit, slopes_dim_1*(limit-point_1[limit_dim])+point_1[point_dims[0]], slopes_dim_2*(limit-point_1[limit_dim])+point_1[point_dims[1]]]
+
+        coords_at_lim = [0, 0, 0]
+        coords_at_lim[point_dims[0]] = slopes_dim_1*(limit-point_1[limit_dim])+point_1[point_dims[0]]
+        coords_at_lim[point_dims[1]] = slopes_dim_2*(limit-point_1[limit_dim])+point_1[point_dims[1]]
+        coords_at_lim[limit_dim] = [limit]*len(coords_at_lim[point_dims[0]])
+
+        return coords_at_lim
+
 if __name__ == "__main__":
 
-    n=2000
+    n=2
     # random_walk = random_walk(
     #     step_number=100,
     #     step_length=1,
@@ -282,16 +356,40 @@ if __name__ == "__main__":
     #     start_z=2,
     #     dimensions=3)
     random_walk = random_walk(
-        step_number=100, wall_mode='exclude',
-        number_of_walks=n, x_limits=[-10, 10], y_limits=[-10,10], dimensions=3,angles_xy=[np.pi/2, np.pi, 3/2*np.pi, 2*np.pi])
+        step_number=1, wall_mode='reflect',
+        number_of_walks=n, x_limits=[-1, 1], y_limits=[-1,1], dimensions=2, step_length=5)#,angles_xy=[np.pi/2, np.pi, 3/2*np.pi, 2*np.pi])
     print(random_walk.end2end)
     
     # color = mpl.cm.summer(np.linspace(0, 0.9, n))
     # mpl.rcParams['axes.prop_cycle'] = cycler.cycler('color', color)
     
     fig1, ax1 = plt.subplots(1, figsize=(8,3), dpi=300)
-    ax1.plot(random_walk.x, random_walk.y, ls='-', lw=1)
-    ax1.set_axis_off()
+    
+    x_values = np.array(list(zip(random_walk.reflect_x.values, random_walk.x))).ravel()
+    y_values = np.array(list(zip(random_walk.reflect_y.values, random_walk.y))).ravel()
+    x_plot = []
+    y_plot = []
+    for curr_walk in range(n):
+        curr_x_combined = x_values[curr_walk::n]
+        curr_y_combined = y_values[curr_walk::n]
+        x_plot.append(np.concatenate([np.array([ii]).ravel() for ii in curr_x_combined]))
+        y_plot.append(np.concatenate([np.array([ii]).ravel() for ii in curr_y_combined]))
+    
+    # x_values = np.array(list(zip(random_walk.reflect_x, random_walk.x))).ravel()
+    # y_values = np.array(list(zip(random_walk.reflect_y, random_walk.y))).ravel()
+    # x_values = x_values[~np.isnan(x_values)]
+    # y_values = y_values[~np.isnan(y_values)]
+        ax1.plot(x_plot[curr_walk], y_plot[curr_walk], ls='-', lw=1, marker='o')
+        ax1.plot(np.concatenate(random_walk.reflect_x[curr_walk].values),
+                 np.concatenate(random_walk.reflect_y[curr_walk].values), ls='none', marker='o', c='r')
+
+    box = patches.Rectangle((random_walk.x_limits[0], random_walk.y_limits[0]),
+                            random_walk.x_limits[1]-random_walk.x_limits[0],
+                            random_walk.y_limits[1]-random_walk.y_limits[0],
+                            linewidth=1, edgecolor='k', facecolor='none', ls='--')
+    ax1.add_patch(box)
+    ax1.set_aspect('equal', adjustable='box')
+    # ax1.set_axis_off()
     fig1.set_facecolor('grey')
     fig1.savefig('random_walk.png')
     
