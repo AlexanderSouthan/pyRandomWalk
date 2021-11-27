@@ -214,50 +214,35 @@ class random_walk():
                             'in one of the edges of the allowed space.')
 
             elif self.wall_mode == 'reflect':
+                constraint_violated = np.sum(constraint_violated, axis=0, dtype='bool')
 
-                reference = []
-                reference.append(np.tile(self.x[curr_step], 2).reshape(2, -1))
-                reference.append(np.tile(self.y[curr_step], 2).reshape(2, -1))
-                reference.append(np.tile(self.z[curr_step], 2).reshape(2, -1))
+                p_prev = np.concatenate([
+                   [self.x[curr_step, constraint_violated]],
+                   [self.y[curr_step, constraint_violated]],
+                   [self.z[curr_step, constraint_violated]]], axis=0).T
 
-                while any(constraint_violated[0:6].ravel()):
-                    for curr_dim, curr_limits, curr_coord in zip(
-                            range(3),
-                            [self.x_limits, self.y_limits, self.z_limits],
-                            [self.x, self.y, self.z]):
-                        if not all(lim is None for lim in curr_limits):
-                            for ii in range(2*curr_dim, 2*curr_dim+2):
-                                reflex_coords = self.calc_intersect_coords(
-                                    [reference[0][ii-2*curr_dim, constraint_violated[ii]],
-                                     reference[1][ii-2*curr_dim, constraint_violated[ii]],
-                                     reference[2][ii-2*curr_dim, constraint_violated[ii]]],
-                                    [self.x[curr_step+1, constraint_violated[ii]],
-                                     self.y[curr_step+1, constraint_violated[ii]],
-                                     self.z[curr_step+1, constraint_violated[ii]]],
-                                    curr_limits[ii-2*curr_dim], curr_dim)
+                p_viol = np.concatenate([
+                    [self.x[curr_step+1, constraint_violated]],
+                    [self.y[curr_step+1, constraint_violated]],
+                    [self.z[curr_step+1, constraint_violated]]], axis=0).T
 
-                                point_dims = [0, 1, 2]
-                                point_dims.remove(curr_dim)
+                x_corr = np.empty_like(self.x[curr_step+1, constraint_violated])
+                y_corr = np.empty_like(self.y[curr_step+1, constraint_violated])
+                z_corr = np.empty_like(self.z[curr_step+1, constraint_violated])
+                for curr_idx, (curr_prev, curr_viol) in enumerate(zip(p_prev, p_viol)):
+                    if self.dimensions == 2:
+                        z_limi = [curr_prev[2], curr_prev[2]]
+                    _, p_re, _ = reflect(
+                        [curr_prev], [curr_viol], limits={'x': self.x_limits,
+                                                          'y': self.y_limits,
+                                                          'z': z_limi})
+                    x_corr[curr_idx] = p_re[0]
+                    y_corr[curr_idx] = p_re[1]
+                    z_corr[curr_idx] = p_re[2]
+                self.x[curr_step+1, constraint_violated] = x_corr
+                self.y[curr_step+1, constraint_violated] = y_corr
+                self.z[curr_step+1, constraint_violated] = z_corr
 
-                                reference[curr_dim][1-ii+2*curr_dim, constraint_violated[ii]] = curr_limits[ii-2*curr_dim]
-                                reference[point_dims[0]][1-ii+2*curr_dim, constraint_violated[ii]] = reflex_coords[point_dims[0]]
-                                reference[point_dims[1]][1-ii+2*curr_dim, constraint_violated[ii]] = reflex_coords[point_dims[1]]
-
-                                for curr_list_x, curr_list_y, curr_list_z, curr_reflex_x, curr_reflex_y, curr_reflex_z in zip(
-                                        self.reflect_x.iloc[curr_step+1, constraint_violated[ii]],
-                                        self.reflect_y.iloc[curr_step+1, constraint_violated[ii]],
-                                        self.reflect_z.iloc[curr_step+1, constraint_violated[ii]],
-                                        reflex_coords[0], reflex_coords[1], reflex_coords[2]):
-                                    curr_list_x.append(curr_reflex_x)
-                                    curr_list_y.append(curr_reflex_y)
-                                    curr_list_z.append(curr_reflex_z)
-
-                            curr_coord[curr_step+1, constraint_violated[2*curr_dim]] -= 2*(curr_coord[curr_step+1, constraint_violated[2*curr_dim]]-curr_limits[0])
-                            curr_coord[curr_step+1, constraint_violated[2*curr_dim+1]] -= 2*(curr_coord[curr_step+1, constraint_violated[2*curr_dim+1]]-curr_limits[1])
-
-                    constraint_violated = self.check_constraints(
-                        self.x[curr_step+1], self.y[curr_step+1],
-                        self.z[curr_step+1])
 
             else:
                 raise ValueError(
@@ -317,25 +302,83 @@ class random_walk():
 
         return constraint_violated
 
-    def calc_intersect_coords(self, point_1, point_2, limit, limit_dim):
-        point_dims = [0, 1, 2]
-        point_dims.remove(limit_dim)
 
-        slopes_dim_1 = (point_2[point_dims[0]] - point_1[point_dims[0]])/(point_2[limit_dim] - point_1[limit_dim])
-        slopes_dim_2 = (point_2[point_dims[1]] - point_1[point_dims[1]])/(point_2[limit_dim] - point_1[limit_dim])
+def reflect(start, end, limits):
+    # The datapoints defining the lines to be reflected
+    start = np.asarray(start)
+    end = np.asarray(end)
+    if start.shape == end.shape:
+        dimensions = start.shape[1]
+    else:
+        raise ValueError(
+            'Arrays for start and end point must have the same shapes.')
 
-        # coords_at_lim = [limit, slopes_dim_1*(limit-point_1[limit_dim])+point_1[point_dims[0]], slopes_dim_2*(limit-point_1[limit_dim])+point_1[point_dims[1]]]
+    # characteristics of the datapoints defining the lines to be reflected on
+    # the borders of the allowed space
+    point_diff = end - start
+    direction = np.sign(point_diff).astype('int')
 
-        coords_at_lim = [0, 0, 0]
-        coords_at_lim[point_dims[0]] = slopes_dim_1*(limit-point_1[limit_dim])+point_1[point_dims[0]]
-        coords_at_lim[point_dims[1]] = slopes_dim_2*(limit-point_1[limit_dim])+point_1[point_dims[1]]
-        coords_at_lim[limit_dim] = [limit]*len(coords_at_lim[point_dims[0]])
+    # characteristics of the box limiting the allowed space
+    limits = np.array([limits[ii] for ii in ['x', 'y', 'z'][:dimensions]]).T#pd.DataFrame.from_dict(limits)
+    box_diff = np.abs(limits[1, :] - limits[0, :])
+    # print(limits)
 
-        return coords_at_lim
+
+    # coordinates of the reflection points and the coordinate limit that causes
+    # reflection
+    reflect = [[] for _ in range(dimensions)]
+    reflect_type = []
+
+    # calculate the intersection of the line between the points with the
+    # lines of a grid formed by repeating the box limiting the allowed
+    # space. This gives the coordinates of reflection points.
+    for ii in range(dimensions):
+        n = 1/2*direction[0, ii]+1/2 if direction[0, ii] != 0 else 0
+        grid = limits[0, ii] + n*box_diff[ii]
+        while abs(grid) < abs(end[0, ii]):
+            lambd = (grid-end[0, ii])/point_diff[0, ii]
+            for jj in range(dimensions):
+                if jj != ii:
+                    reflect[jj].append(end[0, jj] + lambd*point_diff[0, jj])
+                else:
+                    reflect[ii].append(grid)
+            reflect_type.append(ii)
+            n += direction[0, ii]
+            grid = limits[0, ii] + n*box_diff[ii]
+
+    # sort the reflection coordinates
+    sort_idx = np.argsort(reflect[0])[::direction[0, 0]]
+    reflect = [np.array(reflect[ii])[sort_idx] for ii in range(dimensions)]
+    reflect_type = np.array(reflect_type)[sort_idx]
+
+    # Calculate the reflection points on the box faces
+    re_box = [reflect[ii].copy() for ii in range(dimensions)]
+    if reflect[0].size != 0:
+        for ii, r_type in enumerate(reflect_type[:-1]):
+            re_box[r_type][ii+1:] = -(re_box[r_type][ii+1:] -
+                                      re_box[r_type][ii]) + re_box[r_type][ii]
+
+    # calculate the final coordinates
+    final = np.zeros(3)
+    if reflect_type.size != 0:
+        for ii in range(dimensions):
+            if any(reflect_type == ii):
+                coords = re_box[ii][reflect_type == ii]
+                rest = abs(point_diff[0, ii]) - (
+                    (reflect_type == ii).sum()-1)*box_diff[ii] - abs(
+                        start[0, ii]-coords[0])
+                if coords[-1] == limits[0, ii]:
+                    final[ii] = limits[0, ii] + rest
+                else:
+                    final[ii] = limits[1, ii] - rest
+            else:
+                final[ii] = end[0, ii]
+
+    return (re_box, final, reflect_type)
 
 if __name__ == "__main__":
 
-    n=2
+    n=1
     # random_walk = random_walk(
     #     step_number=100,
     #     step_length=1,
