@@ -326,55 +326,63 @@ def reflect(start, end, limits):
 
     # coordinates of the reflection points and the coordinate limit that causes
     # reflection
-    reflect = [[] for _ in range(dimensions)]
-    reflect_type = []
+    reflect = [[[] for _ in range(dimensions)] for _ in range(start.shape[0])]
+    reflect_type = [[] for _ in range(start.shape[0])]
 
     # calculate the intersection of the line between the points with the
     # lines of a grid formed by repeating the box limiting the allowed
     # space. This gives the coordinates of reflection points.
     for ii in range(dimensions):
-        n = 1/2*direction[0, ii]+1/2 if direction[0, ii] != 0 else 0
+        n = np.abs(direction[:, ii]) * (1/2*direction[:, ii]+1/2) #if direction[0, ii] != 0 else 0
         grid = limits[0, ii] + n*box_diff[ii]
-        while abs(grid) < abs(end[0, ii]):
-            lambd = (grid-end[0, ii])/point_diff[0, ii]
-            for jj in range(dimensions):
-                if jj != ii:
-                    reflect[jj].append(end[0, jj] + lambd*point_diff[0, jj])
-                else:
-                    reflect[ii].append(grid)
-            reflect_type.append(ii)
-            n += direction[0, ii]
-            grid = limits[0, ii] + n*box_diff[ii]
+        print('dim: ', ii)
+        for curr_point in range(start.shape[0]):
+            while abs(grid[curr_point]) < end[curr_point, ii]:
+                if curr_point == 3:
+                    print('n: ', n[curr_point])
+                lambd = (grid[curr_point]-end[curr_point, ii])/point_diff[curr_point, ii]
+                for jj in range(dimensions):
+                    if jj != ii:
+                        reflect[curr_point][jj].append(end[curr_point, jj] + lambd*point_diff[curr_point, jj])
+                    else:
+                        if curr_point == 3:
+                            print('grid: ', grid[curr_point])
+                        reflect[curr_point][ii].append(grid[curr_point])
+                reflect_type[curr_point].append(ii)
+                n[curr_point] += direction[curr_point, ii]
+                grid[curr_point] = limits[0, ii] + n[curr_point]*box_diff[ii]
 
     # sort the reflection coordinates
-    sort_idx = np.argsort(reflect[0])[::direction[0, 0]]
-    reflect = [np.array(reflect[ii])[sort_idx] for ii in range(dimensions)]
-    reflect_type = np.array(reflect_type)[sort_idx]
+    sort_idx = [np.argsort(reflect[curr_point][0])[::direction[curr_point, 0]] for curr_point in range(start.shape[0])]
+    reflect = [[np.array(reflect[curr_point][ii])[sort_idx[curr_point]] for ii in range(dimensions)] for curr_point in range(start.shape[0])]
+    reflect_type = [np.array(reflect_type[curr_point])[sort_idx[curr_point]] for curr_point in range(start.shape[0])]
 
     # Calculate the reflection points on the box faces
-    re_box = [reflect[ii].copy() for ii in range(dimensions)]
-    if reflect[0].size != 0:
-        for ii, r_type in enumerate(reflect_type[:-1]):
-            re_box[r_type][ii+1:] = -(re_box[r_type][ii+1:] -
-                                      re_box[r_type][ii]) + re_box[r_type][ii]
+    re_box = [[reflect[curr_point][ii].copy() for ii in range(dimensions)] for curr_point in range(start.shape[0])]
+    for curr_point in range(start.shape[0]):
+        if reflect[curr_point][0].size != 0:
+            for ii, r_type in enumerate(reflect_type[curr_point][:-1]):
+                re_box[curr_point][r_type][ii+1:] = -(re_box[curr_point][r_type][ii+1:] -
+                                                      re_box[curr_point][r_type][ii]) + re_box[curr_point][r_type][ii]
 
     # calculate the final coordinates
-    final = np.zeros(3)
-    if reflect_type.size != 0:
-        for ii in range(dimensions):
-            if any(reflect_type == ii):
-                coords = re_box[ii][reflect_type == ii]
-                rest = abs(point_diff[0, ii]) - (
-                    (reflect_type == ii).sum()-1)*box_diff[ii] - abs(
-                        start[0, ii]-coords[0])
-                if coords[-1] == limits[0, ii]:
-                    final[ii] = limits[0, ii] + rest
+    final = np.zeros_like(start)
+    for curr_point in range(start.shape[0]):
+        if reflect_type[curr_point].size != 0:
+            for ii in range(dimensions):
+                if any(reflect_type[curr_point] == ii):
+                    coords = re_box[curr_point][ii][reflect_type[curr_point] == ii]
+                    rest = abs(point_diff[curr_point, ii]) - (
+                        (reflect_type[curr_point] == ii).sum()-1)*box_diff[ii] - abs(
+                            start[curr_point, ii]-coords[0])
+                    if coords[-1] == limits[0, ii]:
+                        final[curr_point, ii] = limits[0, ii] + rest
+                    else:
+                        final[curr_point, ii] = limits[1, ii] - rest
                 else:
-                    final[ii] = limits[1, ii] - rest
-            else:
-                final[ii] = end[0, ii]
+                    final[curr_point, ii] = end[curr_point, ii]
 
-    return (re_box, final, reflect_type)
+    return (re_box, final, reflect_type, reflect, direction)
 
 if __name__ == "__main__":
 
