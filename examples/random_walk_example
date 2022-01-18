@@ -13,7 +13,7 @@ import matplotlib as mpl
 import cycler
 from mpl_toolkits.mplot3d import Axes3D
 
-from pyRandomWalk.random_walk import random_walk
+from pyRandomWalk import random_walk
 
 
 n=10

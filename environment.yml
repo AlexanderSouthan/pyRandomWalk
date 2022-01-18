@@ -1,0 +1,4 @@
+name: pyRandomWalk 
+dependencies:
+  - numpy
+  - pandas
