@@ -5,3 +5,11 @@
 
 # pyRandomWalk
 Functions for the generation of random walks.
+
+
+## Installation
+
+Download repository and run:
+```
+pip install -e .
+```
