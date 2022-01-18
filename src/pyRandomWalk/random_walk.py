@@ -120,11 +120,11 @@ class random_walk():
 
         self.generate_walk_coordinates()
 
-        # End to end distances are calculated as Euclidean distance (real) and
+        # End to end distances are calculated as Euclidean distance and
         # as square root of mean of squared differences
-        self.end2end_real = np.sqrt(
+        self.end2end_euclidean = np.sqrt(
             ((self.coords[:, 0, :]-self.coords[:, -1, :])**2).sum(axis=1))
-        self.end2end = np.sqrt(
+        self.end2end_mean = np.sqrt(
             ((self.coords[:, 0, :]-self.coords[:, -1, :])**2).sum(axis=1).mean(
                 ))
 
