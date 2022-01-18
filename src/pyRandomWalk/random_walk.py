@@ -226,7 +226,7 @@ class random_walk():
         # Second, the angles in the xz-plane are calculated.
         if self.dimensions == 1 or self.dimensions == 2:
             random_walk_angles_xz = np.full(
-                ((step_number)), np.pi/2)
+                (step_number), np.pi/2)
         elif self.dimensions == 3:
             if self.angles_xz is None:
                 random_walk_angles_xz = np.random.uniform(0, 2*np.pi,
