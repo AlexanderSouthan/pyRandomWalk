@@ -370,3 +370,17 @@ class random_walk():
                         final[curr_point, ii] = end[curr_point, ii]
 
         return (re_box, final, reflect_type, reflect, direction)
+
+    def get_coords(mode):
+        modes = ['all', 'walk_points', 'reflect_points']
+
+        if mode == modes[0]:  # 'all'
+            pass
+        elif mode == modes[1]:  # 'walk_points'
+            pass
+        elif mode == modes[2]:  # 'reflect_points'
+            pass
+        else:
+            raise ValueError(
+                'No valid mode given. Allowed modes are {}, but {} was given.'
+                ''.format(modes, mode))
