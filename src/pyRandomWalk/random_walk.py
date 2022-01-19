@@ -182,7 +182,7 @@ class random_walk():
                     p_prev = self.coords[constraint_violated, curr_step]
                     p_viol = self.coords[constraint_violated, curr_step+1]
 
-                    reflect_coords, final_points, _, _, _ = self.reflect_line(
+                    reflect_coords, final_points = self.reflect_line(
                         p_prev, p_viol)
                     self.coords[constraint_violated, curr_step+1] = (
                         final_points)
@@ -369,18 +369,87 @@ class random_walk():
                     else:
                         final[curr_point, ii] = end[curr_point, ii]
 
-        return (re_box, final, reflect_type, reflect, direction)
+        return (re_box, final)
 
-    def get_coords(mode):
-        modes = ['all', 'walk_points', 'reflect_points']
+    def get_coords(self, mode):
+        """
+        Query function to retrieve certain coordinates of the random walks.
+
+        This method is especially useful for generating graphical
+        representations of the random walks.
+
+        Parameters
+        ----------
+        mode : string
+            Defines which coordinates will be returned. Allowed values are in
+            ['all', 'walk_points', 'reflect_points', 'end_points']. Meanings
+            are as follows:
+                - 'all':
+                    All coordinates of the random walks. This includes the walk
+                    coordinates themselves, but also the reflection points in
+                    case of a constrained walk. For an unconstrained walk,
+                    'all' is equal to 'walk_points'.
+                - 'walk_points':
+                    Only the walk coordinates themselves.
+                - 'reflect_points':
+                    The reflect points for constrained walks with reflection
+                    at the borders.
+                - 'end_points':
+                    Only the start and end points of the walks.
+
+        Raises
+        ------
+        ValueError
+            If no valid mode is given.
+
+        Returns
+        -------
+        return_points : ndarray or list of ndarrays
+            The coordinates defined by mode. For modes 'all' and
+            'reflect_points', lists are returned with as many elements as
+            random_walks. Each element has the shape [n, self.dimensions] with
+            n as the number of points. The value of n depends on the number of
+            reflection points. For modes 'walk_points' and 'end_points', an
+            ndarray is returned with the shape [self.number_of_walks,
+            self.step_number+1, self dimensions] or [self.number_of_walks,
+            2, self dimensions], respectively.
+
+        """
+        modes = ['all', 'walk_points', 'reflect_points', 'end_points']
 
         if mode == modes[0]:  # 'all'
-            pass
+            all_points = []
+            for curr_walk in range(self.number_of_walks):
+                curr_coords = []
+                for curr_point in range(self.step_number):
+                    curr_reflect = np.vstack(
+                        [curr_dim.loc[curr_point+1, curr_walk]
+                         for curr_dim in self.reflect])
+
+                    curr_coords.append(self.coords[curr_walk, [curr_point]].T)
+                    curr_coords.append(curr_reflect)
+                curr_coords.append(self.coords[curr_walk, [-1]].T)
+                all_points.append(np.concatenate(curr_coords, axis=1).T)
+
+            return_points = all_points
+
         elif mode == modes[1]:  # 'walk_points'
-            pass
+            return_points = self.coords
+
         elif mode == modes[2]:  # 'reflect_points'
-            pass
+            reflect_points = []
+            for curr_walk in range(self.number_of_walks):
+                reflect_points.append(np.vstack(
+                    [np.concatenate(curr_dim[curr_walk])
+                     for curr_dim in self.reflect]).T)
+            return_points = reflect_points
+
+        elif mode == modes[3]:  # 'end_points'
+            return_points = self.coords[:, [0, -1], :]
+
         else:
             raise ValueError(
                 'No valid mode given. Allowed modes are {}, but {} was given.'
                 ''.format(modes, mode))
+
+        return return_points
