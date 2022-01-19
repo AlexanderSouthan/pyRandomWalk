@@ -37,8 +37,8 @@ n=10
 random_walk = random_walk(
     step_number=5, wall_mode='reflect',
     number_of_walks=n, limits={'x': [-1, 1], 'y': [-1,1], 'z': [-1, 1]}, dimensions=2, step_length=6)#,angles_xy=[np.pi/2, np.pi, 3/2*np.pi, 2*np.pi])
-print(random_walk.end2end_real)
-print('l*sqrt(n)' , random_walk.end2end)
+print(random_walk.end2end_euclidean)
+print('l*sqrt(n)' , random_walk.end2end_mean)
 
 
 x_values = []
@@ -78,7 +78,7 @@ ax1.add_patch(box)
 ax1.set_aspect('equal', adjustable='box')
 # ax1.set_axis_off()
 fig1.set_facecolor('grey')
-fig1.savefig('random_walk.png')
+fig1.savefig('random_walk_example.png')
 
 # # fig2 = plt.figure()
 # # ax2 = fig2.gca(projection='3d')
