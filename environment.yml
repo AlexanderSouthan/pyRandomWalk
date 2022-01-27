@@ -2,3 +2,6 @@ name: pyRandomWalk
 dependencies:
   - numpy
   - pandas
+  - pip
+  - pip:
+    - little_helpers
