@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 
+from little_helpers.geometry import reflect_line_in_box
 
 class random_walk():
 
@@ -182,8 +183,9 @@ class random_walk():
                     p_prev = self.coords[constraint_violated, curr_step]
                     p_viol = self.coords[constraint_violated, curr_step+1]
 
-                    reflect_coords, final_points = self.reflect_line(
-                        p_prev, p_viol)
+                    reflect_coords, final_points = reflect_line_in_box(
+                        p_prev, p_viol, limits=dict(zip(
+                            ['x', 'y', 'z'][:self.dimensions], self.limits)))
                     self.coords[constraint_violated, curr_step+1] = (
                         final_points)
 
@@ -259,117 +261,6 @@ class random_walk():
                     curr_values > curr_limits[1])
 
         return constraint_violated
-
-    def reflect_line(self, start, end):
-        # The datapoints defining the lines to be reflected
-        start = np.asarray(start)
-        end = np.asarray(end)
-        if start.shape == end.shape:
-            dimensions = start.shape[1]
-        else:
-            raise ValueError(
-                'Arrays for start and end point must have the same shapes.')
-
-        # characteristics of the datapoints defining the lines to be reflected
-        # on the borders of the allowed space
-        point_diff = end - start
-        direction = np.sign(point_diff).astype('int')
-
-        # characteristics of the box limiting the allowed space
-        limits = self.limits.T
-        box_diff = np.zeros(dimensions)
-        for curr_dim in range(dimensions):
-            if np.all(limits[:, curr_dim]):
-                box_diff[curr_dim] = np.abs(
-                    limits[1, curr_dim] - limits[0, curr_dim])
-                if box_diff[curr_dim] == 0:
-                    raise ValueError(
-                        'Upper and lower limits for dimension {} are equal. '
-                        'They must be different or one or both must be None.'
-                        ''.format(curr_dim+1))
-            if np.any((start[:, curr_dim] > limits[1, curr_dim]) |
-                      (start[:, curr_dim] < limits[0, curr_dim])):
-                raise ValueError(
-                    'At least one of the start points is not within the '
-                    'limits.')
-
-        # coordinates of the reflection points and the coordinate limit that
-        # causes reflection
-        reflect = [[[] for _ in range(dimensions)]
-                   for _ in range(start.shape[0])]
-        reflect_type = [[] for _ in range(start.shape[0])]
-
-        # calculate the intersection of the line between the points with the
-        # lines of a grid formed by repeating the box limiting the allowed
-        # space. This gives the coordinates of reflection points.
-        for ii in range(dimensions):
-            # if box_diff[ii] > 0:
-            n = np.abs(direction[:, ii]) * (1/2*direction[:, ii]+1/2).astype(
-                'int')
-            grid = limits[0, ii] + n*box_diff[ii]
-            for curr_point in range(start.shape[0]):
-                while ((grid[curr_point] < end[curr_point, ii]) &
-                       (direction[curr_point, ii] == 1) or
-                       (grid[curr_point] > end[curr_point, ii]) &
-                       (direction[curr_point, ii] == -1)):
-                    lambd = ((grid[curr_point] - end[curr_point, ii]) /
-                             point_diff[curr_point, ii])
-                    for jj in range(dimensions):
-                        if jj != ii:
-                            reflect[curr_point][jj].append(
-                                end[curr_point, jj] +
-                                lambd*point_diff[curr_point, jj])
-                        else:
-                            reflect[curr_point][ii].append(grid[curr_point])
-                    reflect_type[curr_point].append(ii)
-                    n[curr_point] += direction[curr_point, ii]
-                    grid[curr_point] = (limits[0, ii] +
-                                        n[curr_point]*box_diff[ii])
-
-        # sort the reflection coordinates
-        sort_idx = [
-            np.argsort(reflect[curr_point][0])[::direction[curr_point, 0]]
-            for curr_point in range(start.shape[0])]
-        reflect = [[np.array(reflect[curr_point][ii])[sort_idx[curr_point]]
-                    for ii in range(dimensions)]
-                   for curr_point in range(start.shape[0])]
-        reflect_type = [
-            np.array(reflect_type[curr_point])[sort_idx[curr_point]]
-            for curr_point in range(start.shape[0])]
-
-        # Calculate the reflection points on the box faces
-        re_box = [[reflect[curr_point][ii].copy() for ii in range(dimensions)]
-                  for curr_point in range(start.shape[0])]
-        for curr_point in range(start.shape[0]):
-            if reflect[curr_point][0].size != 0:
-                for ii, r_type in enumerate(reflect_type[curr_point][:-1]):
-                    re_box[curr_point][r_type][ii+1:] = -(
-                        re_box[curr_point][r_type][ii+1:] -
-                        re_box[curr_point][r_type][ii]
-                        ) + re_box[curr_point][r_type][ii]
-
-        re_box = [np.array(curr_re_box) for curr_re_box in re_box]
-
-        # calculate the final coordinates
-        final = np.zeros_like(start)
-        for curr_point in range(start.shape[0]):
-            if reflect_type[curr_point].size != 0:
-                for ii in range(dimensions):
-                    if any(reflect_type[curr_point] == ii):
-                        coords = re_box[curr_point][ii][
-                            reflect_type[curr_point] == ii]
-                        rest = abs(point_diff[curr_point, ii]) - (
-                            (reflect_type[curr_point] == ii).sum()-1
-                            )*box_diff[ii] - abs(
-                                start[curr_point, ii]-coords[0])
-                        if coords[-1] == limits[0, ii]:
-                            final[curr_point, ii] = limits[0, ii] + rest
-                        else:
-                            final[curr_point, ii] = limits[1, ii] - rest
-                    else:
-                        final[curr_point, ii] = end[curr_point, ii]
-
-        return (re_box, final)
 
     def get_coords(self, mode):
         """
