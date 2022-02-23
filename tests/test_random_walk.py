@@ -27,7 +27,8 @@ class TestRandomWalk(unittest.TestCase):
 
         # Check if root of mean squared end to end distance maches with
         # theoretical expectation.
-        self.assertAlmostEqual(random_walks.end2end_mean, 0.8*np.sqrt(500), 1)
+        self.assertAlmostEqual(random_walks.end2end('mean_of_squared'),
+                               0.8*np.sqrt(500), 1)
 
     def test_constrained_walk(self):
 
