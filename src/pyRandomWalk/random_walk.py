@@ -3,14 +3,16 @@
 import numpy as np
 import pandas as pd
 
-from little_helpers.geometry import reflect_line_in_box
+from little_helpers.geometry import (
+    reflect_line_in_box, point_inside_cartesianbox, point_inside_circle)
 
 class random_walk():
 
     def __init__(self, step_number=100, number_of_walks=1, start_points=None,
                  dimensions=2, step_length=1, angles_xy=None, angles_xz=None,
                  angles_xy_p=None, angles_xz_p=None, limits=None,
-                 constraint_counter=1000, wall_mode='exclude'):
+                 constraint_counter=1000, wall_mode='exclude',
+                 box_shape='rectangle'):
         """
         Initialize random walk instances.
 
@@ -56,11 +58,20 @@ class random_walk():
             have the same length like angles_xz. The default is None, meaning
             that all angles occur with equal probabilities.
         limits : dict, optional
-            A dictionary with keys in ['x', 'y', 'z'] and entries of lists
-            containing two elements defining the minimum and maximum allowed
-            values of random walk coordinates. The default is None, meaning
-            that there is no constraint on any coordinate (all values are
-            allowed).
+            A dictionary with keys defining the box used as a constraint. These
+            are different for the different box_shape values.
+            For 'rectangle':
+                Keys are ['x', 'y', 'z'] and entries are lists containing two
+                elements defining the minimum and maximum allowed values of
+                random walk coordinates. The default is None, meaning that
+                there is no constraint on any coordinate (all values are
+                allowed). Also, only the upper or the lower limit may be None,
+                so that along that dimension a constraint is only presenst in
+                one direction.
+            For 'circle':
+                Keys are ['x_c', 'y_c', 'z_c', 'r'] and entries are all floats.
+                'x_c', 'y_c' and 'z_c' are the coordinates of the center point
+                of the circle or sphere and 'r' is the radius.
         constraint_counter : int, optional
             With wall_mode 'exclude', this gives the maximum number of
             iterations allowed to generate new coordinates for points violating
@@ -73,6 +84,11 @@ class random_walk():
             constraint_counter). With 'reflect', the random walks are reflected
             on the walls of the box defined by the constraints. The default is
             'exclude'.
+        box_shape : str, optional
+            The shape of the box used to define the contraints. Allowed values
+            are 'rectangle' for a recangular box and 'circle' for a circular
+            box (circle works only for wall_mode = 'exclude' currently). The
+            default is 'rectangle'.
 
         Returns
         -------
@@ -85,6 +101,7 @@ class random_walk():
         self.number_of_walks = number_of_walks
         self.constraint_counter = constraint_counter
         self.wall_mode = wall_mode
+        self.box_shape = box_shape
 
         # Start coordinates for random walks.
         if start_points is None:
@@ -110,24 +127,21 @@ class random_walk():
         else:
             self.angles_xz_p = angles_xz_p
 
-        if limits is None:
-            self.limits = np.array(
-                [[None]*2 for _ in ['x', 'y', 'z']
-                 [:self.dimensions]])
+        if self.box_shape == 'rectangle':
+            if limits is None:
+                self.limits = np.array(
+                    [None for _ in ['x', 'y', 'z']
+                     [:self.dimensions]])
+            else:
+                self.limits = np.array(
+                    [limits[ii][:self.dimensions] for ii in ['x', 'y', 'z']
+                     [:self.dimensions]])
+        elif self.box_shape == 'circle':
+            self.limits = limits
         else:
-            self.limits = np.array(
-                [limits[ii][:self.dimensions] for ii in ['x', 'y', 'z']
-                 [:self.dimensions]])
+            raise ValueError('No valid box_shape given.')
 
         self.generate_walk_coordinates()
-
-        # End to end distances are calculated as Euclidean distance and
-        # as square root of mean of squared differences
-        self.end2end_euclidean = np.sqrt(
-            ((self.coords[:, 0, :]-self.coords[:, -1, :])**2).sum(axis=1))
-        self.end2end_mean = np.sqrt(
-            ((self.coords[:, 0, :]-self.coords[:, -1, :])**2).sum(axis=1).mean(
-                ))
 
     def generate_walk_coordinates(self):
         self.coords = np.zeros(
@@ -145,28 +159,26 @@ class random_walk():
         self.coords[:, 0, :] = self.start_points
 
         for curr_step in range(self.step_number):
-            curr_steps = self.calc_next_steps(
+            curr_steps = self._calc_next_steps(
                     self.number_of_walks)
             self.coords[:, curr_step+1] = (
                 self.coords[:, curr_step, :] + curr_steps)
 
-            constraint_violated = self.check_constraints(
+            constraint_violated = self._check_constraints(
                 self.coords[:, curr_step+1, :])
 
             if self.wall_mode == 'exclude':
                 counter = np.zeros((self.number_of_walks))
-                constraint_violated = np.sum(constraint_violated, axis=0,
-                                             dtype='bool')
                 while any(constraint_violated):
-                    curr_steps = self.calc_next_steps(
+                    curr_steps = self._calc_next_steps(
                         np.sum(constraint_violated))
 
                     self.coords[constraint_violated, curr_step+1] = (
                         self.coords[constraint_violated, curr_step, :] +
                         curr_steps)
 
-                    constraint_violated = np.sum(self.check_constraints(
-                        self.coords[:, curr_step+1, :]), axis=0, dtype='bool')
+                    constraint_violated = self._check_constraints(
+                        self.coords[:, curr_step+1, :])
 
                     counter[constraint_violated] += 1
                     assert not any(counter[constraint_violated] >=
@@ -177,8 +189,6 @@ class random_walk():
                                        'of the edges of the allowed space.')
 
             elif self.wall_mode == 'reflect':
-                constraint_violated = np.sum(constraint_violated, axis=0,
-                                             dtype='bool')
                 if any(constraint_violated):
                     p_prev = self.coords[constraint_violated, curr_step]
                     p_viol = self.coords[constraint_violated, curr_step+1]
@@ -201,7 +211,7 @@ class random_walk():
                     'wall_mode must either be \'reflect\' or \'exclude\', '
                     'but is \'{}\'.'.format(self.wall_mode))
 
-    def calc_next_steps(self, step_number):
+    def _calc_next_steps(self, step_number):
         # This method does work, but could do with some refactoring. The angles
         # have not yet been brought into an iterable format that is flexible
         # with the dimensionality of the random walks. Therefore, currently
@@ -248,19 +258,27 @@ class random_walk():
 
         return curr_steps
 
-    def check_constraints(self, curr_coords):
-        constraint_violated = np.full(
-            (2*self.dimensions, curr_coords.shape[0]), False)
+    def _check_constraints(self, curr_coords):
+        if self.box_shape == 'rectangle':
+            return ~point_inside_cartesianbox(
+                *curr_coords.T,
+                **dict(zip(
+                    ['x_limits', 'y_limits', 'z_limits'][:self.dimensions],
+                    self.limits)))
 
-        for curr_idx, (curr_values, curr_limits) in enumerate(zip(
-                curr_coords.T, self.limits)):
-            if not all(lim is None for lim in curr_limits):
-                constraint_violated[curr_idx*2] = (
-                    curr_values < curr_limits[0])
-                constraint_violated[curr_idx*2+1] = (
-                    curr_values > curr_limits[1])
+        elif self.box_shape == 'circle':
+            return ~point_inside_circle(*curr_coords.T, **self.limits)
 
-        return constraint_violated
+    def end2end(self, mode='euclidean'):
+        # End to end distances are calculated as Euclidean distance and
+        # as square root of mean of squared differences
+        if mode == 'euclidean':
+            return np.sqrt(
+                ((self.coords[:, 0, :]-self.coords[:, -1, :])**2).sum(axis=1))
+        elif mode == 'mean_of_squared':
+            return np.sqrt(
+                ((self.coords[:, 0, :]-self.coords[:, -1, :])**2).sum(
+                    axis=1).mean())
 
     def get_coords(self, mode):
         """
@@ -313,9 +331,12 @@ class random_walk():
             for curr_walk in range(self.number_of_walks):
                 curr_coords = []
                 for curr_point in range(self.step_number):
-                    curr_reflect = np.vstack(
-                        [curr_dim.loc[curr_point+1, curr_walk]
-                         for curr_dim in self.reflect])
+                    if self.wall_mode == 'reflect':
+                        curr_reflect = np.vstack(
+                            [curr_dim.loc[curr_point+1, curr_walk]
+                             for curr_dim in self.reflect])
+                    else:
+                        curr_reflect = [[]]*self.dimensions
 
                     curr_coords.append(self.coords[curr_walk, [curr_point]].T)
                     curr_coords.append(curr_reflect)
@@ -328,12 +349,15 @@ class random_walk():
             return_points = self.coords
 
         elif mode == modes[2]:  # 'reflect_points'
-            reflect_points = []
-            for curr_walk in range(self.number_of_walks):
-                reflect_points.append(np.vstack(
-                    [np.concatenate(curr_dim[curr_walk])
-                     for curr_dim in self.reflect]).T)
-            return_points = reflect_points
+            if self.wall_mode == 'reflect':
+                reflect_points = []
+                for curr_walk in range(self.number_of_walks):
+                    reflect_points.append(np.vstack(
+                        [np.concatenate(curr_dim[curr_walk])
+                         for curr_dim in self.reflect]).T)
+                return_points = reflect_points
+            else:
+                return np.array([])
 
         elif mode == modes[3]:  # 'end_points'
             return_points = self.coords[:, [0, -1], :]
