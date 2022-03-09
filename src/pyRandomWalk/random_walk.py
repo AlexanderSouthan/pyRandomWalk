@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 
 from little_helpers.geometry import (
-    reflect_line_in_box, point_inside_cartesianbox, point_inside_circle)
+    reflect_line_in_box, point_inside_cartesianbox, point_inside_circle,
+    point_inside_polygon)
 
 class random_walk():
 
@@ -72,6 +73,9 @@ class random_walk():
                 Keys are ['x_c', 'y_c', 'z_c', 'r'] and entries are all floats.
                 'x_c', 'y_c' and 'z_c' are the coordinates of the center point
                 of the circle or sphere and 'r' is the radius.
+            For 'polygon':
+                Keys are ['polygon_x', 'polygon_y'] and entries are lists
+                containing the x and y coordinates of the polygon corners.
         constraint_counter : int, optional
             With wall_mode 'exclude', this gives the maximum number of
             iterations allowed to generate new coordinates for points violating
@@ -86,9 +90,10 @@ class random_walk():
             'exclude'.
         box_shape : str, optional
             The shape of the box used to define the contraints. Allowed values
-            are 'rectangle' for a recangular box and 'circle' for a circular
-            box (circle works only for wall_mode = 'exclude' currently). The
-            default is 'rectangle'.
+            are 'rectangle' for a recangular box, 'circle' for a circular
+            box and 'polygon' (circle and polygon work only for wall_mode =
+           'exclude' currently). 'polygon' works only in 2D, 'circle' in 2D and
+            3D, 'rectangle' in 1D, 2D and 3D. The default is 'rectangle'.
 
         Returns
         -------
@@ -97,7 +102,10 @@ class random_walk():
         """
         # General parameters for random walk calculation
         self.step_number = step_number
-        self.dimensions = dimensions
+        if dimensions in [1, 2, 3]:
+            self.dimensions = dimensions
+        else:
+            raise ValueError('dimensions must be in [1, 2, 3].')
         self.number_of_walks = number_of_walks
         self.constraint_counter = constraint_counter
         self.wall_mode = wall_mode
@@ -137,6 +145,13 @@ class random_walk():
                     [limits[ii][:self.dimensions] for ii in ['x', 'y', 'z']
                      [:self.dimensions]])
         elif self.box_shape == 'circle':
+            if self.dimensions < 2:
+                raise ValueError(
+                    'box_shape \'circle\' works only in 2D or 3D.')
+            self.limits = limits
+        elif self.box_shape == 'polygon':
+            if self.dimensions != 2:
+                raise ValueError('box_shape \'polygon\' works only in 2D.')
             self.limits = limits
         else:
             raise ValueError('No valid box_shape given.')
@@ -268,6 +283,9 @@ class random_walk():
 
         elif self.box_shape == 'circle':
             return ~point_inside_circle(*curr_coords.T, **self.limits)
+
+        elif self.box_shape == 'polygon':
+            return ~point_inside_polygon(*curr_coords.T, **self.limits)
 
     def end2end(self, mode='euclidean'):
         # End to end distances are calculated as Euclidean distance and
