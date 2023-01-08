@@ -37,8 +37,8 @@ n=10
 random_walk = random_walk(
     step_number=5, wall_mode='reflect',
     number_of_walks=n, limits={'x': [-1, 1], 'y': [-1,1], 'z': [-1, 1]}, dimensions=2, step_length=6)#,angles_xy=[np.pi/2, np.pi, 3/2*np.pi, 2*np.pi])
-print(random_walk.end2end_euclidean)
-print('l*sqrt(n)' , random_walk.end2end_mean)
+print(random_walk.end2end(mode='euclidean'))
+print('l*sqrt(n)' , random_walk.end2end(mode='mean_of_squared'))
 
 
 x_values = []
