@@ -13,3 +13,8 @@ Download repository and run:
 ```
 pip install -e .
 ```
+
+or run the following command to install from PyPI:
+```
+pip install pyRandomWalk
+```
